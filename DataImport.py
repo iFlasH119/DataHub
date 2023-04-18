@@ -5,6 +5,7 @@ from tkinter import filedialog, messagebox, ttk
 from tkinter import scrolledtext
 import mysql.connector
 import io
+import pymysql
 
 data = None
 
@@ -18,6 +19,8 @@ def load_data(file_path):
     df = pd.read_excel(file_path)
     file_name_label.config(text=file_path.split('/')[-1])
     update_checkboxes()
+    data_sources.insert("", "end", values=("Excel", file_path.split('/')[-1]))
+    display_data(df.head(10), data_tree_excel)
 
 def update_checkboxes():
     for col in df.columns:
@@ -113,29 +116,33 @@ def execute_query():
             try:
                 data = pd.read_sql_query(query, conn)
                 print(data)
-                display_data(data.head(10))
+                display_data(data.head(int(row_display_mysql_var.get())), data_tree_mysql)  # Update this line
             except Exception as e:
                 messagebox.showerror("Error", str(e))
         conn.close()
 
-def display_data(data):
+def display_data(data, treeview):
     # Clear the previous data in the treeview
-    for row in data_tree.get_children():
-        data_tree.delete(row)
+    for row in treeview.get_children():
+        treeview.delete(row)
 
     # Clear the previous columns in the treeview
-    data_tree["columns"] = ()
+    treeview["columns"] = ()
 
     # Set the new columns and column names
     columns = data.columns
-    data_tree["columns"] = tuple(columns)
+    treeview["columns"] = tuple(columns)
     for col in columns:
-        data_tree.heading(col, text=col)
-        data_tree.column(col, anchor='center', stretch=True)
+        treeview.heading(col, text=col)
+        treeview.column(col, anchor='center', stretch=True)
 
     # Insert new data into the treeview
     for index, row in data.iterrows():
-        data_tree.insert("", "end", values=tuple(row))
+        treeview.insert("", "end", values=tuple(row))
+    # Update the column names for both Excel and MySQL data
+    column_names = list(data.columns)
+    aggregation_column_dropdown["values"] = column_names
+    sort_column_dropdown["values"] = column_names
 
 def export_to_excel():
     global data
@@ -156,53 +163,46 @@ root.title("Data Transformer")
 column_vars = {}
 
 notebook = ttk.Notebook(root)
-excel_tab = ttk.Frame(notebook)
-mysql_tab = ttk.Frame(notebook)
-notebook.add(excel_tab, text="Excel")
-notebook.add(mysql_tab, text="MySQL")
+
+data_source_tab = ttk.Frame(notebook)
+data_insight_tab = ttk.Frame(notebook)
+notebook.add(data_source_tab, text="Data Source")
+notebook.add(data_insight_tab, text="Data Insight")
 notebook.pack(expand=True, fill='both')
 
+# Data Source tab
+data_source_notebook = ttk.Notebook(data_source_tab)
+excel_tab = ttk.Frame(data_source_notebook)
+mysql_tab = ttk.Frame(data_source_notebook)
+data_source_notebook.add(excel_tab, text="Excel")
+data_source_notebook.add(mysql_tab, text="MySQL")
+data_source_notebook.pack(expand=True, fill='both')
+
+# Excel Tab
 file_name_label = tk.Label(excel_tab, text="No file selected")
-file_name_label.pack()
-
-column_frame = tk.LabelFrame(excel_tab, text="Columns", padx=10, pady=10)
-column_frame.pack(padx=10, pady=10, fill='both', expand=True)
-
-aggregation_var = tk.StringVar()
-aggregation_label = tk.Label(excel_tab, text="Aggregation:")
-aggregation_label.pack()
-aggregation_dropdown = ttk.Combobox(excel_tab, textvariable=aggregation_var, values=["None", "Sum", "Max", "Min"], state="readonly")
-aggregation_dropdown.current(0)
-aggregation_dropdown.pack()
-
-aggregation_column_var = tk.StringVar()
-aggregation_column_label = tk.Label(excel_tab, text="Column to aggregate:")
-aggregation_column_label.pack()
-aggregation_column_dropdown = ttk.Combobox(excel_tab, textvariable=aggregation_column_var, state="readonly")
-aggregation_column_dropdown.pack()
-
-sort_column_var = tk.StringVar()
-sort_column_label = tk.Label(excel_tab, text="Sort by column:")
-sort_column_label.pack()
-sort_column_dropdown = ttk.Combobox(excel_tab, textvariable=sort_column_var, state="readonly")
-sort_column_dropdown.pack()
-
-sort_order_var = tk.StringVar()
-sort_order_label = tk.Label(excel_tab, text="Sort order:")
-sort_order_label.pack()
-sort_order_dropdown = ttk.Combobox(excel_tab, textvariable=sort_order_var, values=["Ascending", "Descending"], state="readonly")
-sort_order_dropdown.current(0)
-sort_order_dropdown.pack()
-
-group_data_var = tk.BooleanVar(value=True)
-group_data_checkbox = tk.Checkbutton(excel_tab, text="Group data", variable=group_data_var, onvalue=True, offvalue=False)
-group_data_checkbox.pack(anchor='w')
+file_name_label.grid(row=0, column=0, padx=5, pady=5)
 
 browse_button = tk.Button(excel_tab, text="Browse", command=browse_file)
-browse_button.pack(pady=(10, 5))
+browse_button.grid(row=1, column=0, padx=10, pady=(0, 5))
 
-transform_button = tk.Button(excel_tab, text="Transform", command=transform_data)
-transform_button.pack(pady=5)
+row_display_var = tk.StringVar(value="10")
+row_display_label = tk.Label(excel_tab, text="Rows to display:")
+row_display_label.grid(row=3, column=0, padx=10, sticky=tk.W)
+row_display_entry = tk.Entry(excel_tab, textvariable=row_display_var, width=4)
+row_display_entry.grid(row=3, column=0, padx=80, pady=10, sticky=tk.W)
+
+load_button = tk.Button(excel_tab, text="Load", command=lambda: display_data(df.head(int(row_display_var.get())), data_tree_excel))
+load_button.grid(row=2, column=0, padx=10, pady=(5, 10))
+
+data_tree_excel = ttk.Treeview(excel_tab, show="headings")
+data_tree_excel.grid(row=4, column=0, padx=10, pady=10, sticky='nsew')
+
+scrollbar_excel = ttk.Scrollbar(excel_tab, orient='vertical', command=data_tree_excel.yview)
+scrollbar_excel.grid(row=4, column=2, sticky='ns')
+data_tree_excel.configure(yscrollcommand=scrollbar_excel.set)
+
+excel_tab.rowconfigure(4, weight=1)
+excel_tab.columnconfigure(1, weight=1)
 
 # MySQL Tab
 table_vars = {}
@@ -237,6 +237,12 @@ mysql_query_label.grid(row=4, column=0, padx=(10, 5), pady=(10, 5), sticky='e')
 mysql_query_entry = scrolledtext.ScrolledText(mysql_tab, height=4, width=40)
 mysql_query_entry.grid(row=4, column=1, padx=(5, 10), pady=(10, 5), sticky='w')
 
+row_display_mysql_var = tk.StringVar(value="10")
+row_display_mysql_label = tk.Label(mysql_tab, text="Rows to display:")
+row_display_mysql_label.grid(row=6, column=0, padx=10, pady=(5, 0), sticky=tk.W)
+row_display_mysql_entry = tk.Entry(mysql_tab, textvariable=row_display_mysql_var, width=4)
+row_display_mysql_entry.grid(row=6, column=0, padx=80, pady=(5, 0), sticky=tk.W)
+
 load_button = tk.Button(mysql_tab, text="Load", command=execute_query)
 load_button.grid(row=6, column=1, pady=(10, 5), sticky='e')
 
@@ -251,5 +257,72 @@ data_tree.grid(row=7, column=0, columnspan=3, padx=10, pady=10, sticky='nsew')
 
 download_button = tk.Button(mysql_tab, text="Download", command=export_to_excel)
 download_button.grid(row=8, column=1, pady=(10, 5), sticky='e')
+
+data_tree_mysql = ttk.Treeview(mysql_tab, show="headings")
+data_tree_mysql.grid(row=7, column=0, columnspan=3, padx=10, pady=10, sticky='nsew')
+
+scrollbar_mysql = ttk.Scrollbar(mysql_tab, orient='vertical', command=data_tree_mysql.yview)
+scrollbar_mysql.grid(row=7, column=3, padx=(0, 10), pady=10, sticky='ns')
+data_tree_mysql.configure(yscrollcommand=scrollbar_mysql.set)
+
+# Data Insight tab
+data_insight_notebook = ttk.Notebook(data_insight_tab)
+aggregation_tab = ttk.Frame(data_insight_notebook)
+analytics_tab = ttk.Frame(data_insight_notebook)
+forecasting_tab = ttk.Frame(data_insight_notebook)
+data_insight_notebook.add(aggregation_tab, text="Aggregation")
+data_insight_notebook.add(analytics_tab, text="Analytics")
+data_insight_notebook.add(forecasting_tab, text="Forecasting")
+data_insight_notebook.pack(expand=True, fill='both')
+
+# Aggregation tab contents
+column_frame = tk.LabelFrame(aggregation_tab, text="Columns", padx=10, pady=10)
+column_frame.pack(padx=10, pady=10, fill='both', expand=True)
+
+aggregation_var = tk.StringVar()
+aggregation_label = tk.Label(aggregation_tab, text="Aggregation:")
+aggregation_label.pack()
+aggregation_dropdown = ttk.Combobox(aggregation_tab, textvariable=aggregation_var, values=["None", "Sum", "Max", "Min"], state="readonly")
+aggregation_dropdown.current(0)
+aggregation_dropdown.pack()
+
+aggregation_column_var = tk.StringVar()
+aggregation_column_label = tk.Label(aggregation_tab, text="Column to aggregate:")
+aggregation_column_label.pack()
+aggregation_column_dropdown = ttk.Combobox(aggregation_tab, textvariable=aggregation_column_var, state="readonly")
+aggregation_column_dropdown.pack()
+
+sort_column_var = tk.StringVar()
+sort_column_label = tk.Label(aggregation_tab, text="Sort by column:")
+sort_column_label.pack()
+sort_column_dropdown = ttk.Combobox(aggregation_tab, textvariable=sort_column_var, state="readonly")
+sort_column_dropdown.pack()
+
+sort_order_var = tk.StringVar()
+sort_order_label = tk.Label(aggregation_tab, text="Sort order:")
+sort_order_label.pack()
+sort_order_dropdown = ttk.Combobox(aggregation_tab, textvariable=sort_order_var, values=["Ascending", "Descending"], state="readonly")
+sort_order_dropdown.current(0)
+sort_order_dropdown.pack()
+
+group_data_var = tk.BooleanVar(value=True)
+group_data_checkbox = tk.Checkbutton(aggregation_tab, text="Group data", variable=group_data_var, onvalue=True, offvalue=False)
+group_data_checkbox.pack(anchor='w')
+
+transform_button = tk.Button(aggregation_tab, text="Transform", command=transform_data)
+transform_button.pack(pady=5)
+
+data_sources = ttk.Treeview(aggregation_tab, columns=("source", "name"), show="headings", selectmode="browse")
+data_sources.heading("source", text="Source")
+data_sources.heading("name", text="Name")
+data_sources.column("source", anchor="center", width=100)
+data_sources.column("name", anchor="center", width=200)
+data_sources.pack(side=tk.RIGHT, padx=10, pady=10, fill='both')
+
+# Analytics tab contents
+# ...
+
+# Forecasting tab contents
+# ...
 
 root.mainloop()
